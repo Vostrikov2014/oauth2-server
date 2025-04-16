@@ -4,3 +4,9 @@ server:
 spring:
   application:
     name: oauth2-server
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,configprops
