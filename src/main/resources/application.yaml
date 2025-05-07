@@ -11,31 +11,6 @@ spring:
     password: 1111
     driver-class-name: org.mariadb.jdbc.Driver
 
-  security:
-    user:
-      name: vd
-      password: 111
-    oauth2:
-      authorization-server:
-        #issuer-url: "http://localhost:9000"
-        client:
-          oidc-client:
-            registration:
-              client-id: "ui-cdo"
-              client-secret: "{noop}secret"
-              client-authentication-methods: "client_secret_basic"
-              authorization-grant-types:
-                - "authorization_code"
-                - "refresh_token"
-              redirect-uris: "http://localhost:3000/auth/callback"
-              post-logout-redirect-uris: "http://127.0.0.1:9000/"
-              scopes:
-                - "openid"
-                - "profile"
-            require-authorization-consent: false
-
-
-
 management:
   endpoints:
     web:
