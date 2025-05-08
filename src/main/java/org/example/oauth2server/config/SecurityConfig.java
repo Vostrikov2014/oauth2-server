@@ -5,6 +5,8 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -13,6 +15,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -29,18 +32,20 @@ import org.springframework.security.oauth2.server.authorization.config.annotatio
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
+import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.cors.*;
 
+import java.io.IOException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -51,11 +56,22 @@ public class SecurityConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
-        OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
-                OAuth2AuthorizationServerConfigurer.authorizationServer();
+        OAuth2AuthorizationServerConfigurer authorizationServerConfigurer = OAuth2AuthorizationServerConfigurer.authorizationServer();
+
+        // Настройка CORS для OAuth2 эндпоинтов
+        authorizationServerConfigurer
+                .authorizationEndpoint(authorizationEndpoint ->
+                        authorizationEndpoint
+                                .authorizationResponseHandler(new CorsFilter(corsConfigurationSource()))
+                )
+                .tokenEndpoint(tokenEndpoint ->
+                        tokenEndpoint
+                                .accessTokenResponseHandler(new CorsFilter(corsConfigurationSource()))
+                );
 
         http
-                .csrf(AbstractHttpConfigurer::disable)   // Отключаем CSRF для прототипов REST API
+                .csrf(csrf -> csrf.ignoringRequestMatchers(
+                        authorizationServerConfigurer.getEndpointsMatcher()))
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))  // Включаем CORS
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
                 .with(authorizationServerConfigurer, (authorizationServer) ->
@@ -64,7 +80,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests((authorize) ->
                         authorize
-                                .requestMatchers("/oauth2/**", "/login/**").permitAll() // Доступ без аутентификации
+                                .requestMatchers("/**", "/oauth2/**", "/login/**").permitAll() // Доступ без аутентификации
                                 .anyRequest().authenticated()
                 )
                 // Redirect to the login page when not authenticated from the
@@ -74,6 +90,7 @@ public class SecurityConfig {
                                 new LoginUrlAuthenticationEntryPoint("/login"),
                                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
                         )
+                        .authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/login"))
                 );
 
         return http.build();
@@ -83,16 +100,12 @@ public class SecurityConfig {
     @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(AbstractHttpConfigurer::disable)   // Отключаем CSRF для прототипов REST API
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))  // Включаем CORS
-                .authorizeHttpRequests((authorize) -> authorize
-                        .requestMatchers("/oauth2/**", "/login/**").permitAll() // Доступ без аутентификации
-                        .anyRequest().authenticated()
-                )
-                // Form login handles the redirect to the login page from the
-                // authorization server filter chain
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/**", "/oauth2/**", "/login/**", "/error").permitAll()
+                        .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults());
-
         return http.build();
     }
 
@@ -109,15 +122,20 @@ public class SecurityConfig {
     @Bean
     public RegisteredClientRepository registeredClientRepository() {
         RegisteredClient oidcClient = RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId("ui-cdo")
+                .clientId("client")
                 .clientSecret("{noop}secret")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri("http://localhost:3000/")
+                .redirectUri("http://localhost:3000")
                 .postLogoutRedirectUri("http://localhost:3000")
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
+                .tokenSettings(
+                        TokenSettings.builder()
+                                .accessTokenTimeToLive(Duration.ofHours(6))
+                                .build()
+                )
                 .clientSettings(
                         ClientSettings.builder()
                                 .requireAuthorizationConsent(false)
@@ -168,17 +186,6 @@ public class SecurityConfig {
         return NoOpPasswordEncoder.getInstance();
     }
 
-    /*@Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http .csrf(AbstractHttpConfigurer::disable)   // Отключаем CSRF для прототипов REST API
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))  // Включаем CORS
-                .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/oauth2/**", "/login/**", "/register", "/username").permitAll() // Доступ без аутентификации
-                        .anyRequest().authenticated()   // Требуется аутентификация для остальных запросов
-                );
-        return http.build();
-    }*/
-
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
@@ -186,9 +193,30 @@ public class SecurityConfig {
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));  // Разрешить методы
         configuration.setAllowedHeaders(List.of("*"));                          // Разрешить любые заголовки
         configuration.setAllowCredentials(true);                                   // Разрешить отправку cookie
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);             // Применение ко всем маршрутам
         return source;
+    }
+
+    // Добавляем кастомный CORS фильтр
+    private static class CorsFilter implements AuthenticationSuccessHandler {
+        private final CorsConfigurationSource configurationSource;
+
+        public CorsFilter(CorsConfigurationSource configurationSource) {
+            this.configurationSource = configurationSource;
+        }
+
+        @Override
+        public void onAuthenticationSuccess(
+                HttpServletRequest request,
+                HttpServletResponse response,
+                Authentication authentication) throws IOException {
+
+            CorsConfiguration configuration = configurationSource.getCorsConfiguration(request);
+            CorsProcessor processor = new DefaultCorsProcessor();
+            processor.processRequest(configuration, request, response);
+        }
     }
 }
