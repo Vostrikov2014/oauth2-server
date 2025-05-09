@@ -5,8 +5,6 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -15,7 +13,6 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -35,18 +32,17 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
-import org.springframework.web.cors.*;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.io.IOException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
 
 @Configuration
@@ -56,41 +52,23 @@ public class SecurityConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer = OAuth2AuthorizationServerConfigurer.authorizationServer();
 
-        // Настройка CORS для OAuth2 эндпоинтов
-        authorizationServerConfigurer
-                .authorizationEndpoint(authorizationEndpoint ->
-                        authorizationEndpoint
-                                .authorizationResponseHandler(new CorsFilter(corsConfigurationSource()))
-                )
-                .tokenEndpoint(tokenEndpoint ->
-                        tokenEndpoint
-                                .accessTokenResponseHandler(new CorsFilter(corsConfigurationSource()))
-                );
-
         http
-                .csrf(csrf -> csrf.ignoringRequestMatchers(
-                        authorizationServerConfigurer.getEndpointsMatcher()))
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))  // Включаем CORS
+                .cors(Customizer.withDefaults()) // Включаем CORS
+                .csrf(AbstractHttpConfigurer::disable)
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
-                .with(authorizationServerConfigurer, (authorizationServer) ->
-                        authorizationServer
-                                .oidc(Customizer.withDefaults())	// Enable OpenID Connect 1.0
-                )
-                .authorizeHttpRequests((authorize) ->
-                        authorize
-                                .requestMatchers("/**", "/oauth2/**", "/login/**").permitAll() // Доступ без аутентификации
-                                .anyRequest().authenticated()
-                )
+                .with(authorizationServerConfigurer, (a) -> a.oidc(Customizer.withDefaults()))	// Enable OpenID Connect 1.0
+                .authorizeHttpRequests(a -> a.anyRequest().authenticated())
+
                 // Redirect to the login page when not authenticated from the
                 // authorization endpoint
-                .exceptionHandling((exceptions) -> exceptions
+                .exceptionHandling((e) -> e
                         .defaultAuthenticationEntryPointFor(
                                 new LoginUrlAuthenticationEntryPoint("/login"),
                                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
                         )
-                        .authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/login"))
                 );
 
         return http.build();
@@ -100,12 +78,11 @@ public class SecurityConfig {
     @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/**", "/oauth2/**", "/login/**", "/error").permitAll()
-                        .anyRequest().authenticated())
-                .formLogin(Customizer.withDefaults());
+                .authorizeHttpRequests(a -> a.anyRequest().authenticated())
+                .formLogin(Customizer.withDefaults())
+                .logout(Customizer.withDefaults());
         return http.build();
     }
 
@@ -123,7 +100,7 @@ public class SecurityConfig {
     public RegisteredClientRepository registeredClientRepository() {
         RegisteredClient oidcClient = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId("client")
-                .clientSecret("{noop}secret")
+                .clientSecret("secret")  //"{noop}secret"
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
@@ -151,10 +128,12 @@ public class SecurityConfig {
         KeyPair keyPair = generateRsaKey();
         RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
         RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
+
         RSAKey rsaKey = new RSAKey.Builder(publicKey)
                 .privateKey(privateKey)
                 .keyID(UUID.randomUUID().toString())
                 .build();
+
         return new ImmutableJWKSet<>(new JWKSet(rsaKey));
     }
 
@@ -188,35 +167,14 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));      // Разрешить запросы с порта 3000
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));  // Разрешить методы
-        configuration.setAllowedHeaders(List.of("*"));                          // Разрешить любые заголовки
-        configuration.setAllowCredentials(true);                                   // Разрешить отправку cookie
-        configuration.setMaxAge(3600L);
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);             // Применение ко всем маршрутам
+        CorsConfiguration config = new CorsConfiguration();
+        config.addAllowedHeader("*");                           // Разрешить любые заголовки
+        config.addAllowedMethod("*");                           // Разрешить методы
+        config.addAllowedOrigin("http://localhost:3000");       // Разрешить запросы с порта 3000
+        config.setAllowCredentials(true);                       // Разрешить отправку cookie
+        source.registerCorsConfiguration("/**", config); // Применить ко всем маршрутам
         return source;
     }
 
-    // Добавляем кастомный CORS фильтр
-    private static class CorsFilter implements AuthenticationSuccessHandler {
-        private final CorsConfigurationSource configurationSource;
-
-        public CorsFilter(CorsConfigurationSource configurationSource) {
-            this.configurationSource = configurationSource;
-        }
-
-        @Override
-        public void onAuthenticationSuccess(
-                HttpServletRequest request,
-                HttpServletResponse response,
-                Authentication authentication) throws IOException {
-
-            CorsConfiguration configuration = configurationSource.getCorsConfiguration(request);
-            CorsProcessor processor = new DefaultCorsProcessor();
-            processor.processRequest(configuration, request, response);
-        }
-    }
 }
