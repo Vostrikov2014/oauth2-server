@@ -104,10 +104,8 @@ public class SecurityConfig {
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri("http://localhost:3000")
-                .postLogoutRedirectUri("http://localhost:3000")
-                //.redirectUri("http://localhost:3000/callback")
-                //.postLogoutRedirectUri("http://localhost:3000/callback")
+                .redirectUri("http://localhost:3000/callback")
+                .postLogoutRedirectUri("http://localhost:3000/callback")
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
                 .tokenSettings(
