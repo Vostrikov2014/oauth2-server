@@ -99,24 +99,23 @@ public class SecurityConfig {
     @Bean
     public RegisteredClientRepository registeredClientRepository() {
         RegisteredClient oidcClient = RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId("client")
-                .clientSecret("secret") //{noop}secret
+                .clientId("jitsi-admin")
+                .clientSecret("{noop}secret") //{noop}secret
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .redirectUri("http://localhost:3000/callback")
+                .redirectUri("http://localhost:8090/login/oauth2/code/jitsi-admin")
                 .postLogoutRedirectUri("http://localhost:3000/callback")
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
-                .tokenSettings(
-                        TokenSettings.builder()
-                                .accessTokenTimeToLive(Duration.ofHours(6))
-                                .build()
-                )
-                .clientSettings(
-                        ClientSettings.builder()
+                .scope("admin")
+                .clientSettings(ClientSettings.builder()
                                 .requireAuthorizationConsent(false)
                                 .requireProofKey(false)
+                                .build())
+                .tokenSettings(TokenSettings.builder()
+                                .accessTokenTimeToLive(Duration.ofHours(6))
                                 .build())
                 .build();
 
