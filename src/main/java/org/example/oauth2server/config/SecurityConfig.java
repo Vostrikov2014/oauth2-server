@@ -105,7 +105,7 @@ public class SecurityConfig {
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .redirectUri("http://localhost:3000/callback")
-                .redirectUri("http://localhost:8090/login/oauth2/code/jitsi-admin")
+                //.redirectUri("http://localhost:8090/login/oauth2/code/jitsi-admin")
                 .postLogoutRedirectUri("http://localhost:3000/callback")
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
