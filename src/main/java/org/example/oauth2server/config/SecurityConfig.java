@@ -60,7 +60,9 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
                 .with(authorizationServerConfigurer, (a) -> a.oidc(Customizer.withDefaults()))	// Enable OpenID Connect 1.0
-                .authorizeHttpRequests(a -> a.anyRequest().authenticated())
+                .authorizeHttpRequests(a -> a
+                        .requestMatchers("/.well-known/**").permitAll()
+                        .anyRequest().authenticated())
 
                 // Redirect to the login page when not authenticated from the
                 // authorization endpoint
@@ -105,7 +107,7 @@ public class SecurityConfig {
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .redirectUri("http://localhost:3000/callback")
-                .redirectUri("http://localhost:8090/login/oauth2/code/jitsi-admin")
+                //.redirectUri("http://localhost:8090/login/oauth2/code/jitsi-admin")
                 .postLogoutRedirectUri("http://localhost:3000/callback")
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
